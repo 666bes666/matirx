@@ -15,10 +15,11 @@
 3. [API Design](#3-api-design)
 4. [Frontend Architecture](#4-frontend-architecture)
 5. [Authentication & Authorization](#5-authentication--authorization)
-6. [Deployment Architecture](#6-deployment-architecture)
-7. [Security Considerations](#7-security-considerations)
-8. [Performance Considerations](#8-performance-considerations)
-9. [Monitoring & Logging](#9-monitoring--logging)
+6. [Notifications](#6-notifications)
+7. [Deployment Architecture](#7-deployment-architecture)
+8. [Security Considerations](#8-security-considerations)
+9. [Performance Considerations](#9-performance-considerations)
+10. [Monitoring & Logging](#10-monitoring--logging)
 
 ---
 
@@ -131,12 +132,13 @@ User (Browser)
 | department_id | UUID | FK → departments(id) ON DELETE SET NULL | Department |
 | team_id | UUID | FK → teams(id) ON DELETE SET NULL | Team |
 | telegram_username | VARCHAR(100) | | Telegram handle for notifications |
+| notification_preferences | JSONB | NOT NULL, DEFAULT '{}' | Per-category on/off for telegram/email |
 | role | user_role_enum | NOT NULL, DEFAULT 'employee' | RBAC role |
 | is_active | BOOLEAN | NOT NULL, DEFAULT true | Soft-delete flag |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
-**Enum `user_role_enum`:** `admin`, `department_head`, `team_lead`, `employee`
+**Enum `user_role_enum`:** `admin`, `head`, `department_head`, `team_lead`, `hr`, `employee`
 
 #### 2.1.2 Competency Tables
 
@@ -239,6 +241,9 @@ Seed data:
 | id | UUID | PK | Unique identifier |
 | name | VARCHAR(255) | NOT NULL | Campaign name |
 | description | TEXT | | Campaign description |
+| scope | campaign_scope_enum | NOT NULL, DEFAULT 'division' | Campaign scope |
+| department_id | UUID | FK → departments(id) ON DELETE SET NULL, NULL | If scoped to department |
+| team_id | UUID | FK → teams(id) ON DELETE SET NULL, NULL | If scoped to team |
 | start_date | DATE | NOT NULL | Campaign start date |
 | end_date | DATE | NOT NULL | Campaign end date |
 | status | campaign_status_enum | NOT NULL, DEFAULT 'draft' | Current status |
@@ -246,7 +251,9 @@ Seed data:
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
-**Enum `campaign_status_enum`:** `draft`, `active`, `completed`, `archived`
+**Enum `campaign_scope_enum`:** `division`, `department`, `team`
+
+**Enum `campaign_status_enum`:** `draft`, `active`, `collecting`, `calibration`, `finalized`, `archived`
 
 **Check constraint:** `end_date > start_date`
 
@@ -298,6 +305,38 @@ Seed data:
 
 **Unique constraint:** `(campaign_id, user_id, competency_id)`
 
+**`assessment_weights`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| campaign_id | UUID | FK → assessment_campaigns(id) ON DELETE CASCADE, NOT NULL, UNIQUE | Campaign |
+| head_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.35 | Department head weight |
+| tl_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.30 | Team lead weight |
+| self_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.20 | Self-assessment weight |
+| peer_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.15 | Peer average weight |
+
+**Check constraint:** `head_weight + tl_weight + self_weight + peer_weight = 1.00`
+
+**`calibration_flags`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| campaign_id | UUID | FK → assessment_campaigns(id) ON DELETE CASCADE, NOT NULL | Campaign |
+| user_id | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Assessed user |
+| competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Flagged competency |
+| max_score | INTEGER | NOT NULL | Highest score across assessors |
+| min_score | INTEGER | NOT NULL | Lowest score across assessors |
+| spread | INTEGER | NOT NULL | max_score - min_score |
+| resolved | BOOLEAN | NOT NULL, DEFAULT false | Whether flag has been resolved |
+| resolved_by | UUID | FK → users(id) ON DELETE SET NULL, NULL | User who resolved the flag |
+| resolution_notes | TEXT | | Notes on resolution |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Flag creation timestamp |
+| resolved_at | TIMESTAMPTZ | | Resolution timestamp |
+
+A calibration flag is auto-created when `max_score - min_score >= 2` for any competency during a campaign.
+
 #### 2.1.5 Development Plans
 
 **`development_plans`**
@@ -324,6 +363,9 @@ Seed data:
 | current_level | INTEGER | NOT NULL, CHECK (current_level >= 0 AND current_level <= 4) | Level at plan creation |
 | target_level | INTEGER | NOT NULL, CHECK (target_level >= 0 AND target_level <= 4) | Desired level |
 | status | goal_status_enum | NOT NULL, DEFAULT 'planned' | Goal status |
+| is_mandatory | BOOLEAN | NOT NULL, DEFAULT false | Mandatory goal (must be met by cycle end) |
+| carried_over_from | UUID | FK → development_goals(id) ON DELETE SET NULL, NULL | Reference to previous cycle's goal if carried over |
+| trigger_flag | BOOLEAN | NOT NULL, DEFAULT false | Flagged if mandatory goal not met at cycle end |
 | deadline | DATE | | Target completion date |
 | notes | TEXT | | Additional notes |
 
@@ -353,7 +395,47 @@ Seed data:
 
 **Primary key:** `(goal_id, resource_id)`
 
-#### 2.1.6 Career Paths
+#### 2.1.6 Proposals
+
+**`competency_proposals`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| proposed_by | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Proposer |
+| competency_name | VARCHAR(255) | NOT NULL | Proposed competency name |
+| category_id | UUID | FK → competency_categories(id) ON DELETE RESTRICT, NOT NULL | Target category |
+| description | TEXT | | Competency description |
+| justification | TEXT | | Reason for proposing |
+| status | proposal_status_enum | NOT NULL, DEFAULT 'pending' | Review status |
+| reviewed_by | UUID | FK → users(id) ON DELETE SET NULL, NULL | Reviewer |
+| review_notes | TEXT | | Reviewer notes |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
+| reviewed_at | TIMESTAMPTZ | | Review timestamp |
+
+**Enum `proposal_status_enum`:** `pending`, `approved`, `rejected`
+
+**`resource_proposals`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| proposed_by | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Proposer |
+| competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Related competency |
+| title | VARCHAR(500) | NOT NULL | Resource title |
+| url | VARCHAR(2048) | | Link to resource |
+| type | resource_type_enum | NOT NULL | Resource type |
+| description | TEXT | | Resource description |
+| action | resource_action_enum | NOT NULL | Proposed action |
+| target_resource_id | UUID | FK → learning_resources(id) ON DELETE SET NULL, NULL | Existing resource (for remove action) |
+| status | proposal_status_enum | NOT NULL, DEFAULT 'pending' | Review status |
+| reviewed_by | UUID | FK → users(id) ON DELETE SET NULL, NULL | Reviewer |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
+| reviewed_at | TIMESTAMPTZ | | Review timestamp |
+
+**Enum `resource_action_enum`:** `add`, `remove`
+
+#### 2.1.7 Career Paths
 
 **`career_paths`**
 
@@ -373,10 +455,23 @@ Seed data:
 | career_path_id | UUID | FK → career_paths(id) ON DELETE CASCADE, NOT NULL | Parent path |
 | competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Required competency |
 | required_level | INTEGER | NOT NULL, CHECK (required_level >= 0 AND required_level <= 4) | Minimum level |
+| is_mandatory | BOOLEAN | NOT NULL, DEFAULT false | True = mandatory requirement, false = desirable |
 
 **Unique constraint:** `(career_path_id, competency_id)`
 
-#### 2.1.7 Audit
+**Transition readiness threshold:** 90% overall (100% of mandatory requirements + 90% overall score). Transition requires: competency threshold met + manager_approval + hr_approval + vacancy available + minimum tenure in current role.
+
+#### 2.1.8 Assessment Staleness Rule
+
+Assessments older than 2 years are marked "stale" in the UI. Query for stale assessments:
+
+```sql
+WHERE last_assessed_at < NOW() - INTERVAL '2 years'
+```
+
+Stale assessments remain visible for historical reference but are visually distinguished and excluded from active gap analysis calculations.
+
+#### 2.1.9 Audit
 
 **`audit_log`**
 
@@ -433,6 +528,16 @@ erDiagram
     departments ||--o{ career_paths : "to"
     career_paths ||--o{ career_path_requirements : "requires"
     competencies ||--o{ career_path_requirements : ""
+
+    assessment_campaigns ||--o{ assessment_weights : "configures"
+    assessment_campaigns ||--o{ calibration_flags : "flags"
+    users ||--o{ calibration_flags : "flagged user"
+    competencies ||--o{ calibration_flags : "flagged competency"
+
+    users ||--o{ competency_proposals : "proposes"
+    competency_categories ||--o{ competency_proposals : "target category"
+    users ||--o{ resource_proposals : "proposes"
+    competencies ||--o{ resource_proposals : "for competency"
 
     users ||--o{ audit_log : "performed by"
 
@@ -565,6 +670,30 @@ erDiagram
         NUMERIC head_score
         NUMERIC final_score
         TIMESTAMPTZ created_at
+    }
+
+    assessment_weights {
+        UUID id PK
+        UUID campaign_id FK
+        DECIMAL head_weight
+        DECIMAL tl_weight
+        DECIMAL self_weight
+        DECIMAL peer_weight
+    }
+
+    calibration_flags {
+        UUID id PK
+        UUID campaign_id FK
+        UUID user_id FK
+        UUID competency_id FK
+        INTEGER max_score
+        INTEGER min_score
+        INTEGER spread
+        BOOLEAN resolved
+        UUID resolved_by FK
+        TEXT resolution_notes
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ resolved_at
     }
 
     development_plans {
