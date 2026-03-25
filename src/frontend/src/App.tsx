@@ -15,6 +15,10 @@ import { CampaignsPage } from './pages/CampaignsPage'
 import { CampaignDetailPage } from './pages/CampaignDetailPage'
 import { MyTasksPage } from './pages/MyTasksPage';
 import { GapAnalysisPage } from './pages/GapAnalysisPage';
+import { HeatmapPage } from './pages/HeatmapPage'
+import { IDPPage } from './pages/IDPPage'
+import { IDPDetailPage } from './pages/IDPDetailPage'
+import { ImportPage } from './pages/ImportPage'
 
 export function App() {
   return (
@@ -34,6 +38,10 @@ export function App() {
           <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
           <Route path="/my-tasks" element={<MyTasksPage />} />
           <Route path="/users/:userId/gap" element={<GapAnalysisPage />} />
+          <Route path="/heatmap" element={<HeatmapPage />} />
+          <Route path="/idp" element={<IDPPage />} />
+          <Route path="/idp/:id" element={<IDPDetailPage />} />
+          <Route path="/import" element={<ImportPage />} />
         </Route>
       </Route>
     </Routes>

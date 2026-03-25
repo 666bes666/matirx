@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Group, LoadingOverlay, Paper, Select, Stack, Title } from '@mantine/core'
+import { Button, Group, LoadingOverlay, Paper, Select, Stack, Title } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { analyticsApi } from '../api/analytics'
 import { usersApi } from '../api/users'
 import { competenciesApi } from '../api/competencies'
+import { exportApi } from '../api/export'
 import { MatrixGrid } from '../components/assessment/MatrixGrid'
 
 export function MatrixPage() {
@@ -71,6 +72,12 @@ export function MatrixPage() {
           clearable
           w={220}
         />
+        <Button
+          variant="outline"
+          onClick={() => exportApi.downloadMatrixXlsx()}
+        >
+          Экспорт Excel
+        </Button>
       </Group>
 
       <Paper p="md" withBorder pos="relative" style={{ minHeight: 200 }}>

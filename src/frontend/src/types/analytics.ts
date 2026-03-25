@@ -16,3 +16,9 @@ export interface MatrixData {
   competencies: MatrixCompetency[]
   scores: Record<string, Record<string, number>>
 }
+
+export interface HeatmapData {
+  departments: { id: string; name: string }[]
+  competencies: { id: string; name: string; category_id: string }[]
+  averages: Record<string, Record<string, number | null>>
+}

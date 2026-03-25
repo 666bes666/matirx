@@ -95,6 +95,27 @@ export function AppLayout() {
             </Text>
           )}
         </NavLink>
+        <NavLink to="/heatmap" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Тепловая карта
+            </Text>
+          )}
+        </NavLink>
+        <NavLink to="/idp" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Планы развития
+            </Text>
+          )}
+        </NavLink>
+        <NavLink to="/import" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Импорт данных
+            </Text>
+          )}
+        </NavLink>
       </AppShell.Navbar>
 
       <AppShell.Main>
