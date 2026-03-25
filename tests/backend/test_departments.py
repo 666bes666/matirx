@@ -42,14 +42,6 @@ def setup_schema():
     asyncio.run(_create())
     yield
 
-    async def _drop():
-        engine = create_async_engine(TEST_DB_URL, echo=False)
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await engine.dispose()
-
-    asyncio.run(_drop())
-
 
 @pytest_asyncio.fixture
 async def db() -> AsyncGenerator[AsyncSession, None]:

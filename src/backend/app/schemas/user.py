@@ -6,6 +6,20 @@ from pydantic import BaseModel, EmailStr
 from app.models.enums import UserRole
 
 
+class DepartmentBrief(BaseModel):
+    id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
+class TeamBrief(BaseModel):
+    id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -43,6 +57,8 @@ class UserRead(BaseModel):
     role: UserRole
     department_id: uuid.UUID | None
     team_id: uuid.UUID | None
+    department: DepartmentBrief | None = None
+    team: TeamBrief | None = None
     telegram_username: str | None
     hire_date: date | None
     is_active: bool

@@ -41,6 +41,9 @@ def setup_schema():
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         await engine.dispose()
+        r = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        await r.flushdb()
+        await r.aclose()
 
     asyncio.run(_run())
     yield
