@@ -10,6 +10,42 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.4.0] — 2026-03-25 — Phase 2 Complete: Assessment MVP
+
+### Added
+
+**Week 9 — Campaign lifecycle**
+- `POST /api/v1/assessments/campaigns/{id}/activate|close|finalize|archive` — status machine transitions (Draft→Active→Calibration→Finalized→Archived)
+- Weighted aggregation engine: computes `AggregatedScore` with proportional weight redistribution when assessor types are missing
+- `GET /api/v1/assessments/campaigns/{id}/progress` — returns total/completed/pending counts and completion percentage
+- `GET /api/v1/assessments/campaigns/{id}/scores` — aggregated scores per user×competency after finalization
+- `PUT /api/v1/assessments/campaigns/{id}/weights` — configure assessor weights per campaign (default: DH 35%, TL 30%, self 20%, peer 15%)
+- `CampaignsPage` — list campaigns with status filter + create modal
+- `CampaignDetailPage` — progress bar, lifecycle action buttons, assessments table
+
+**Week 10 — 360° peer selection and task tracking**
+- `POST /api/v1/assessments/campaigns/{id}/peers` — employee sets peer reviewers (PeerSelection model)
+- `GET /api/v1/assessments/campaigns/{id}/peers` — get own peer list for campaign
+- `GET /api/v1/assessments/my-tasks` — pending assessments where current user is assessor
+- `MyTasksPage` — list of pending assessment tasks, click to open form
+
+**Week 11 — Assessment history**
+- `GET /api/v1/users/{id}/assessment-history` — all AggregatedScores across campaigns with self/tl/dh/peer component breakdown
+
+**Week 12 — Visualizations**
+- `RadarChart` component (Recharts) with current + target level overlay
+- `GapAnalysisPage` — target profile selector, current vs required levels, color-coded gap badges, completion progress bar
+- `UserProfilePage` — embedded radar chart of competency scores + Gap-анализ navigation button
+
+### Tests
+- 8 new tests: `test_campaign_lifecycle.py` (full lifecycle, invalid transitions, progress, aggregation, weights, RBAC)
+- **Total: 141 tests, coverage 90%**
+
+### PRs
+- [#13](https://github.com/666bes666/matrix/pull/13) — Phase 2 complete
+
+---
+
 ## [0.3.0] — 2026-03-25 — Phase 1 Complete: Weeks 4–8
 
 ### Added
@@ -178,7 +214,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/666bes666/matrix/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/666bes666/matrix/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/666bes666/matrix/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/666bes666/matrix/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/666bes666/matrix/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/666bes666/matrix/releases/tag/v0.1.0
