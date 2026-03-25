@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_roles
+from app.core.dependencies import check_department_access, get_current_user, require_roles
 from app.models.user import User
 from app.schemas.department import DepartmentCreate, DepartmentRead, DepartmentUpdate
 from app.schemas.team import TeamCreate, TeamRead, TeamUpdate
@@ -111,8 +111,9 @@ async def create_team(
     dept_id: uuid.UUID,
     data: TeamCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin", "head", "department_head")),
+    current_user: User = Depends(require_roles("admin", "head", "department_head")),
 ):
+    check_department_access(current_user, dept_id)
     service = TeamService(db)
     try:
         team = await service.create(dept_id, data)
@@ -142,8 +143,9 @@ async def update_team(
     team_id: uuid.UUID,
     data: TeamUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin", "head", "department_head")),
+    current_user: User = Depends(require_roles("admin", "head", "department_head")),
 ):
+    check_department_access(current_user, dept_id)
     service = TeamService(db)
     try:
         team = await service.update(team_id, data)

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.core.security import decode_token
+from app.models.enums import UserRole
 from app.models.user import User
 
 
@@ -56,3 +57,19 @@ def require_roles(*roles: str) -> Callable:
         return current_user
 
     return _check
+
+
+def check_department_access(user: User, department_id: UUID) -> None:
+    if user.role == UserRole.DEPARTMENT_HEAD and user.department_id != department_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to other departments is not allowed",
+        )
+
+
+def check_team_access(user: User, team_department_id: UUID) -> None:
+    if user.role == UserRole.TEAM_LEAD and user.department_id != team_department_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to other teams is not allowed",
+        )
