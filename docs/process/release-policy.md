@@ -194,6 +194,17 @@ Brief description of what this PR does and why.
 
 Solo developer project: **self-review with the full checklist completed** is sufficient. No mandatory reviewer count.
 
+### AI Agent (Claude Code) Merge Authorization
+
+The AI coding agent (Claude Code) is authorized to perform the full PR lifecycle autonomously:
+
+- Create branches, commits, and pull requests
+- Squash merge PRs into `main` after CI passes (or when CI is not yet configured)
+- Delete merged branches
+- Create version tags and GitHub Releases
+
+The agent follows the same merge strategy (squash merge), commit convention (Conventional Commits), and branching rules as a human developer. No additional human approval is required for merging.
+
 ### Merge Strategy
 
 | Branch type | Merge method | Rationale |
@@ -465,6 +476,7 @@ If the issue is caused by a database migration:
 | Commit format | Conventional Commits |
 | Merge strategy | Squash merge (all branch types) |
 | Review process | Self-review with full checklist (solo developer) |
+| AI agent merge | Claude Code authorized to merge autonomously |
 | CI stages | Lint, Type Check, Test, Build, Deploy |
 | Staging deploy | Auto on merge to `main` |
 | Production deploy | On git tag `v*` |
