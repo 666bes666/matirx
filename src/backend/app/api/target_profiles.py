@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_roles
+from app.core.dependencies import check_department_access, get_current_user, require_roles
 from app.models.user import User
 from app.schemas.target_profile import (
     TargetProfileCompetencyInput,
@@ -41,8 +41,9 @@ async def list_target_profiles(
 async def create_target_profile(
     data: TargetProfileCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin", "head", "department_head")),
+    current_user: User = Depends(require_roles("admin", "head", "department_head")),
 ):
+    check_department_access(current_user, data.department_id)
     service = TargetProfileService(db)
     try:
         profile = await service.create(data)
@@ -70,9 +71,14 @@ async def update_target_profile(
     profile_id: uuid.UUID,
     data: TargetProfileUpdate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin", "head", "department_head")),
+    current_user: User = Depends(require_roles("admin", "head", "department_head")),
 ):
     service = TargetProfileService(db)
+    try:
+        existing = await service.get_by_id(profile_id)
+    except ValueError as e:
+        _raise(str(e))
+    check_department_access(current_user, existing.department_id)
     try:
         profile = await service.update(profile_id, data)
     except ValueError as e:
@@ -98,9 +104,14 @@ async def set_competencies(
     profile_id: uuid.UUID,
     competencies: list[TargetProfileCompetencyInput],
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles("admin", "head", "department_head")),
+    current_user: User = Depends(require_roles("admin", "head", "department_head")),
 ):
     service = TargetProfileService(db)
+    try:
+        existing = await service.get_by_id(profile_id)
+    except ValueError as e:
+        _raise(str(e))
+    check_department_access(current_user, existing.department_id)
     try:
         profile = await service.set_competencies(profile_id, competencies)
     except ValueError as e:
