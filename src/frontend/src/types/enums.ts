@@ -16,6 +16,20 @@ export enum CampaignStatus {
   ARCHIVED = 'archived',
 }
 
+export enum CompetencyCategoryType {
+  HARD_SKILL = 'hard_skill',
+  SOFT_SKILL = 'soft_skill',
+  PROCESS = 'process',
+  DOMAIN = 'domain',
+}
+
+export const CATEGORY_LABELS: Record<CompetencyCategoryType, string> = {
+  [CompetencyCategoryType.HARD_SKILL]: 'Хард скиллы',
+  [CompetencyCategoryType.SOFT_SKILL]: 'Софт скиллы',
+  [CompetencyCategoryType.PROCESS]: 'Процессы',
+  [CompetencyCategoryType.DOMAIN]: 'Доменные знания',
+}
+
 export const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.ADMIN]: 'Администратор',
   [UserRole.HEAD]: 'Руководитель управления',
