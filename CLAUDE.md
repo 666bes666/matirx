@@ -32,26 +32,26 @@ tests/                # Test suite
 
 ## Tech Stack (planned)
 
-- **Backend**: Python 3.12+, FastAPI, SQLAlchemy, Alembic
-- **Frontend**: React + TypeScript, Vite
-- **Database**: PostgreSQL
-- **Cache**: Redis
-- **Notifications**: Telegram Bot API
+- **Backend**: Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2
+- **Frontend**: React 18+, TypeScript, Vite, TanStack Query + Zustand, Mantine UI, Recharts
+- **Database**: PostgreSQL 16
+- **Cache**: Redis 7
+- **Task Queue**: Celery + Redis (campaign deadlines, notifications, IDP checks)
+- **Notifications**: Telegram Bot API + in-app (polling). No email in MVP
 - **Containerization**: Docker, Docker Compose
 - **CI/CD**: GitHub Actions
 - **Package management**: uv (Python), pnpm (JS)
+- **Linting**: ruff (Python), ESLint + Prettier (JS)
 
 ## Branching Strategy
 
 See `docs/process/release-policy.md` for full details.
 
+**GitHub Flow:**
 - `main` — production-ready, protected
-- `develop` — integration branch
 - `feature/*` — new features
-- `bugfix/*` — bug fixes
-- `hotfix/*` — production hotfixes
+- `fix/*` — bug fixes
 - `docs/*` — documentation changes
-- `release/*` — release preparation
 
 ## Development Commands
 
@@ -103,24 +103,25 @@ docker compose up -d
 3. Advanced (Продвинутый)
 4. Expert (Эксперт)
 
-### User Roles
-- **Admin** — full system management
-- **Department Head** (Руководитель управления) — sees all departments
-- **Team Lead** — manages their specific team within a department
-- **HR** — access to reports and analytics
-- **Employee** (Сотрудник) — views own profile, self-assessment
+### User Roles (6 roles)
+- **Admin** — full system management, audit log, user CRUD, system configuration
+- **Head** (Руководитель управления) — **informational role**: sees all 5 departments (read-only for assessments/calibration), creates campaigns, manages competency catalog. Does NOT assess employees, does NOT calibrate
+- **Department Head** (Руководитель отдела) — sees own department + read-only on others, edits own target profiles, manages competencies for own department
+- **Team Lead** — assesses own team, sees individual peer scores in own dept, proposes competencies/changes
+- **HR** — sees all personal data (names, scores) across division, exports reports, CSV import, cannot edit IDP
+- **Employee** (Сотрудник) — views own profile, self-assessment, aggregated scores only
 
 ### Assessment Process
 - 360° assessment: self + peers + team lead + department head
 - Frequency: twice per year
 - Full history tracking with growth dynamics
-- **Default weights**: Head 35%, TL 30%, Self 20%, Peers 15% (configurable per campaign)
-- **Aggregation**: `final = head×0.35 + tl×0.30 + self×0.20 + peer_avg×0.15`; missing source weight redistributed proportionally
+- **Default weights**: Department Head 35%, TL 30%, Self 20%, Peers 15%. Head does NOT assess. (configurable per campaign)
+- **Aggregation**: `final = dept_head×0.35 + tl×0.30 + self×0.20 + peer_avg×0.15`; missing source weight redistributed proportionally among remaining
 - **Peer selection**: employee chooses reviewers (min 1), reviewer cannot refuse
 - **Deadline extension**: +2 weeks auto-extension for incomplete peer reviews
 - **Immutability**: self-assessment locked after submission; manager can return for rework
-- **Anonymity**: employee sees aggregated score only; TL sees individual scores within own dept; Head sees all
-- **Calibration**: auto-flag when score spread ≥2 levels; calibration phase before finalization
+- **Anonymity**: employee sees aggregated score only; TL sees individual scores within own dept; Department Head sees all within own dept; Head sees aggregated scores across all depts (read-only)
+- **Calibration**: auto-flag when score spread ≥2 levels; Department Head calibrates (Head has read-only view of flags)
 - **Campaign types**: division-wide OR targeted (single department/team)
 - **Campaign statuses**: Draft → Active → Collecting → Calibration → Finalized → Archived
 - **Mid-campaign joiners**: wait for next cycle
@@ -128,18 +129,23 @@ docker compose up -d
 - **Staleness**: assessments older than 2 years marked as "stale" in UI
 
 ### User Roles (detailed permissions)
-- **Admin** — full access: manual scores, delete assessments, configure weights, manage everything
-- **Department Head** (Руководитель управления) — sees/assesses all 5 departments, edits target profiles, runs calibration
-- **Department Head (отдел)** — sees other departments (read-only), edits own dept target profiles, assesses own dept
-- **Team Lead** — assesses own team, sees individual peer scores in own dept, **cannot edit** target profiles but **can propose** changes, can propose competencies
-- **HR** — sees all personal data (names, scores) across division, **cannot edit** IDP, can export reports
+- **Admin** — full access: manual scores, delete assessments, configure weights, manage everything, audit log
+- **Head** (Руководитель управления) — **informational**: sees all 5 departments (read-only for assessments), edits target profiles, manages competency catalog, creates campaigns. Does NOT assess, does NOT calibrate
+- **Department Head** (Руководитель отдела) — sees other departments (read-only), edits own dept target profiles, **assesses own dept (weight 0.35)**, manages competencies for own dept, creates campaigns for own dept, **runs calibration for own dept**
+- **Team Lead** — assesses own team, sees individual peer scores in own dept, **cannot edit** target profiles but **can propose** changes, can propose competencies, creates IDP
+- **HR** — sees all personal data (names, scores) across division, **cannot edit** IDP, can export reports, CSV import
 - **Employee** (Сотрудник) — own data only, aggregated scores only, can propose learning resources
 
 ### Competency Catalog Rules
-- Common competencies → assessed by ALL departments
-- Level descriptions are universal (not department-contextual)
-- Deactivated competencies: historical assessments preserved, reactivation by Admin only
-- Learning resources: any user can propose → approval by Admin/Head/TL ("second hand" principle)
+- Common competencies (`is_common=true`) → mandatory for ALL employees (soft skills, ITIL)
+- Level names are universal: None/Novice/Basic/Advanced/Expert. Level **criteria descriptions are per-competency** (table `competency_level_criteria`)
+- 5 levels (0-4), strict, same for all competencies
+- Catalog management: Admin + Head + Department Heads (own department)
+- Deactivated competencies: Admin chooses — archive (`is_archived=true`, visible in history) or migrate scores to another competency
+- Versioning: audit_log tracks description changes, scores are NOT versioned
+- Recommended 15-20 competencies per target profile (no hard limit); radar chart groups by category
+- Learning resources: TL and above add freely; employees propose via resource_proposals with moderation
+- Resources linked to competency + target_level (e.g., "Kubernetes Level 2→3")
 - Resource deletion: any user can request → confirmation by Admin/Head/TL
 
 ### Career Paths Rules
@@ -153,15 +159,17 @@ docker compose up -d
 ### IDP Rules
 - **Bidirectional initiation**: employee proposes → TL approves, OR TL creates → employee approves
 - Disagreements → escalation to Department Head
-- Unfinished goals **carry over** to next cycle
+- Unfinished goals **carry over** semi-automatically: system proposes transfer, TL confirms each goal
 - Deadlines only for **mandatory competencies**
 - Unfulfilled mandatory goal → **trigger flag** (highlighted to TL and Head)
-- Goal completion detected **automatically** when assessment score improves in next campaign
+- Goal completion: auto-detected when assessment score >= target_level → status `pending_completion` + TL notification for manual confirmation
 
 ### Notifications
-- **Dual channel**: Telegram (primary) + email (fallback)
-- No Telegram → email only
-- User can toggle notification categories: assessment, IDP, career, system
+- **MVP**: Telegram (primary) + in-app (table `notifications`, polling 30s, badge on icon)
+- **No email in MVP** — email fallback planned for future versions
+- Telegram Bot: long polling (dev), webhook (prod)
+- Telegram linking: user sends `/start <code>` to bot (code from profile), bot saves `chat_id`
+- User can toggle notification categories: assessment, IDP, career, system (all toggleable, except critical from Admin)
 
 ### Onboarding (new employee)
 Wizard on first login: fill profile → view target profile → initial self-assessment → see gap analysis → recommended resources
@@ -181,8 +189,60 @@ Full filtering system:
 - 360° assessment workflow with calibration phase
 - Radar charts + heatmaps + Excel/PDF export
 - Career path visualization (cross-department transitions)
-- CSV/Excel import for employees and competencies
-- Telegram + email notifications (configurable per user)
+- CSV/Excel import (template download + upload) for employees and competencies
+- Telegram + in-app notifications (configurable per user)
 - Assessment history, growth tracking, staleness marking
 - Full search and filtering
 - Onboarding wizard for new employees
+
+### Authentication & Bootstrap
+- **Bootstrap**: CLI command `create-superuser` (first deploy)
+- **Registration**: free self-registration, account inactive until Admin/HR confirms
+- **Access token**: 30 minutes, stored in memory (JS variable)
+- **Refresh token**: 7 days, httpOnly cookie, silent refresh on page reload
+- **Password reset**: via Telegram bot (no SMTP in MVP)
+- **Account lockout**: Redis counter, 5 attempts → 15 min block (429), auto-unlock by TTL
+
+### Assessment UX
+- **Peer selection**: 3-day window after campaign activation, min 1, max 5 peers
+- **Cross-department peers**: allowed
+- **Draft saving**: server-side auto-save every 30s
+- **Mass assessment UX**: TL chooses from 3 modes — (A) per employee, (B) matrix grid, (C) per competency
+- **Aggregation**: weighted average only (no arithmetic mean or median)
+
+### Soft Delete Strategy
+- **Soft delete**: users (`is_active`), competencies (`is_archived`), campaigns (status `archived`), development_plans (`is_archived`)
+- **No delete**: departments (5 preset, cannot be deleted)
+- **Hard delete + checks**: teams (must be empty), learning_resources (cascade), career_paths, career_path_requirements
+
+### Seed Data Strategy
+- **Production**: 5 departments + competency catalog + target profiles + proficiency levels 0-4
+- **Dev/Staging**: + test users + demo campaign with scores
+- Implementation: `seed.py` script with `--demo` flag
+
+### Frontend Architecture
+- **State**: TanStack Query (server) + Zustand (client)
+- **UI Library**: Mantine
+- **Charts**: Recharts
+- **Language**: Russian only (no i18n)
+- **Mobile**: Mobile-first design
+- **Testing**: Vitest (unit for calculations) + React Testing Library (critical components: forms, auth)
+
+### Branching Model
+- **GitHub Flow** (NOT Git Flow)
+- `main` — production-ready, protected
+- `feature/*`, `fix/*`, `docs/*` — branch from main, PR to main
+- No `develop`, `release/*`, `hotfix/*` branches
+- Staging deploys from main after merge
+- Production deploys on git tag
+
+### Infrastructure
+- **Docker Compose (dev)**: 7 services — postgres, redis, backend, frontend, celery-worker, celery-beat, telegram-bot. In dev: telegram-bot uses long polling (separate service). In prod: webhook mode (part of FastAPI)
+- **Task scheduler**: Celery + Redis (campaign deadlines, auto-extend, reminders, IDP checks)
+- **Phase 0 order**: Infrastructure-first — Docker + CI/CD + DB + staging + backups → backend + frontend parallel → auth + seed
+
+### Hosting
+- **Yandex Cloud**: Compute Instance (VM) + Managed PostgreSQL + Container Registry + Object Storage (backups) + Lockbox (secrets)
+
+### Architecture Decision Records
+See `docs/technical/adr-001-implementation-decisions.md` for all 50 implementation decisions with rationale.

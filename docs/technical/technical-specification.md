@@ -60,11 +60,12 @@
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2 | REST API, business logic, data access |
-| Frontend | React 18+, TypeScript, Vite, TanStack Query, Recharts | SPA, data visualization, user interface |
+| Frontend | React 18+, TypeScript, Vite, TanStack Query, Zustand, Mantine UI, Recharts | SPA (mobile-first), data visualization, user interface |
 | Database | PostgreSQL 16 | Primary persistent storage |
 | Cache | Redis | Session store, aggregated score cache, rate limiting |
 | Auth | JWT (access + refresh), bcrypt | Authentication and authorization |
-| Notifications | Telegram Bot API | Push notifications to users |
+| Notifications | Telegram Bot API + in-app (polling) | Push notifications to users (no email in MVP) |
+| Task Queue | Celery + Redis | Campaign deadlines, auto-extend, reminders, IDP checks |
 | Reverse Proxy | nginx or Caddy | TLS termination, static file serving, routing |
 | CI/CD | GitHub Actions | Automated testing, linting, deployment |
 | Package Mgmt | uv (Python), pnpm (JS) | Dependency management |
@@ -131,10 +132,13 @@ User (Browser)
 | position | VARCHAR(255) | | Job title / position |
 | department_id | UUID | FK → departments(id) ON DELETE SET NULL | Department |
 | team_id | UUID | FK → teams(id) ON DELETE SET NULL | Team |
-| telegram_username | VARCHAR(100) | | Telegram handle for notifications |
-| notification_preferences | JSONB | NOT NULL, DEFAULT '{}' | Per-category on/off for telegram/email |
+| telegram_username | VARCHAR(100) | | Telegram handle (informational) |
+| telegram_chat_id | BIGINT | UNIQUE, NULL | Telegram chat ID for sending messages (set via bot /start flow) |
+| notification_preferences | JSONB | NOT NULL, DEFAULT '{}' | Per-category on/off for telegram/in-app |
 | role | user_role_enum | NOT NULL, DEFAULT 'employee' | RBAC role |
-| is_active | BOOLEAN | NOT NULL, DEFAULT true | Soft-delete flag |
+| hire_date | DATE | | Date of hire |
+| is_active | BOOLEAN | NOT NULL, DEFAULT false | Account active flag (false until Admin confirms registration) |
+| onboarding_completed | BOOLEAN | NOT NULL, DEFAULT false | True after onboarding wizard completed |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
@@ -160,7 +164,8 @@ User (Browser)
 | category_id | UUID | FK → competency_categories(id) ON DELETE RESTRICT, NOT NULL | Parent category |
 | name | VARCHAR(255) | NOT NULL | Competency name |
 | description | TEXT | | Detailed description |
-| is_common | BOOLEAN | NOT NULL, DEFAULT false | True = applies to all departments |
+| is_common | BOOLEAN | NOT NULL, DEFAULT false | True = mandatory for ALL employees (soft skills, ITIL) |
+| is_archived | BOOLEAN | NOT NULL, DEFAULT false | Soft-delete: archived competency excluded from new assessments but visible in history |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
@@ -221,6 +226,8 @@ Seed data:
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
+**Unique constraint:** `(department_id, position)` — один target profile на department + position. Система автоматически определяет target profile для пользователя по совпадению `department_id` + `position`.
+
 **`target_profile_competencies`**
 
 | Column | Type | Constraints | Description |
@@ -229,6 +236,7 @@ Seed data:
 | target_profile_id | UUID | FK → target_profiles(id) ON DELETE CASCADE, NOT NULL | Parent profile |
 | competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Required competency |
 | required_level | INTEGER | NOT NULL, CHECK (required_level >= 0 AND required_level <= 4) | Expected level |
+| is_mandatory | BOOLEAN | NOT NULL, DEFAULT false | True = must be 100% for career readiness; false = desirable |
 
 **Unique constraint:** `(target_profile_id, competency_id)`
 
@@ -270,7 +278,7 @@ Seed data:
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | completed_at | TIMESTAMPTZ | | Completion timestamp |
 
-**Enum `assessor_type_enum`:** `self`, `peer`, `team_lead`, `head`
+**Enum `assessor_type_enum`:** `self`, `peer`, `team_lead`, `department_head`
 
 **Enum `assessment_status_enum`:** `pending`, `in_progress`, `completed`
 
@@ -285,6 +293,7 @@ Seed data:
 | competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Scored competency |
 | score | INTEGER | NOT NULL, CHECK (score >= 0 AND score <= 4) | Numeric score |
 | comment | TEXT | | Optional comment |
+| is_draft | BOOLEAN | NOT NULL, DEFAULT true | True = auto-saved draft; false = submitted. Aggregation uses only is_draft=false |
 
 **Unique constraint:** `(assessment_id, competency_id)`
 
@@ -299,7 +308,7 @@ Seed data:
 | self_score | NUMERIC(3,2) | | Self-assessment score |
 | peer_avg | NUMERIC(3,2) | | Average peer score |
 | tl_score | NUMERIC(3,2) | | Team lead score |
-| head_score | NUMERIC(3,2) | | Department head score |
+| dept_head_score | NUMERIC(3,2) | | Department head score |
 | final_score | NUMERIC(3,2) | | Weighted final score |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Aggregation timestamp |
 
@@ -311,12 +320,12 @@ Seed data:
 |--------|------|-------------|-------------|
 | id | UUID | PK | Unique identifier |
 | campaign_id | UUID | FK → assessment_campaigns(id) ON DELETE CASCADE, NOT NULL, UNIQUE | Campaign |
-| head_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.35 | Department head weight |
+| dept_head_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.35 | Department head weight |
 | tl_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.30 | Team lead weight |
 | self_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.20 | Self-assessment weight |
 | peer_weight | DECIMAL(3,2) | NOT NULL, DEFAULT 0.15 | Peer average weight |
 
-**Check constraint:** `head_weight + tl_weight + self_weight + peer_weight = 1.00`
+**Check constraint:** `dept_head_weight + tl_weight + self_weight + peer_weight = 1.00`
 
 **`calibration_flags`**
 
@@ -337,6 +346,20 @@ Seed data:
 
 A calibration flag is auto-created when `max_score - min_score >= 2` for any competency during a campaign.
 
+**`peer_selections`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| campaign_id | UUID | FK → assessment_campaigns(id) ON DELETE CASCADE, NOT NULL | Campaign |
+| assessee_id | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Employee selecting peers |
+| peer_id | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Selected peer |
+| selected_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Selection timestamp |
+
+**Unique constraint:** `(campaign_id, assessee_id, peer_id)`
+
+**Check constraints:** Min 1, max 5 peers per assessee per campaign (enforced at application level). Selection window: 3 days after campaign activation.
+
 #### 2.1.5 Development Plans
 
 **`development_plans`**
@@ -346,12 +369,20 @@ A calibration flag is auto-created when `max_score - min_score >= 2` for any com
 | id | UUID | PK | Unique identifier |
 | user_id | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Plan owner |
 | campaign_id | UUID | FK → assessment_campaigns(id) ON DELETE SET NULL | Related campaign |
-| created_by | UUID | FK → users(id) ON DELETE SET NULL, NOT NULL | Plan creator |
+| name | VARCHAR(255) | NOT NULL | Plan title |
+| created_by | UUID | FK → users(id) ON DELETE SET NULL, NOT NULL | Plan creator (employee or TL) |
+| approved_by | UUID | FK → users(id) ON DELETE SET NULL, NULL | User who approved the plan |
 | status | plan_status_enum | NOT NULL, DEFAULT 'draft' | Plan status |
+| approval_status | plan_approval_enum | NOT NULL, DEFAULT 'pending' | Approval workflow status |
+| start_date | DATE | | Plan start date |
+| end_date | DATE | | Plan target end date |
+| is_archived | BOOLEAN | NOT NULL, DEFAULT false | Soft-delete flag |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
 | updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Last update timestamp |
 
 **Enum `plan_status_enum`:** `draft`, `active`, `completed`
+
+**Enum `plan_approval_enum`:** `pending`, `approved`, `rejected`, `escalated`
 
 **`development_goals`**
 
@@ -379,10 +410,12 @@ A calibration flag is auto-created when `max_score - min_score >= 2` for any com
 |--------|------|-------------|-------------|
 | id | UUID | PK | Unique identifier |
 | competency_id | UUID | FK → competencies(id) ON DELETE CASCADE, NOT NULL | Related competency |
+| target_level | INTEGER | NOT NULL, CHECK (target_level >= 1 AND target_level <= 4) | For which proficiency level this resource is useful (e.g., "helps reach Level 3") |
 | title | VARCHAR(500) | NOT NULL | Resource title |
 | url | VARCHAR(2048) | | Link to resource |
 | type | resource_type_enum | NOT NULL | Resource type |
 | description | TEXT | | Resource description |
+| created_by | UUID | FK → users(id) ON DELETE SET NULL, NULL | User who added the resource |
 
 **Enum `resource_type_enum`:** `course`, `article`, `video`, `book`, `practice`
 
@@ -446,6 +479,7 @@ A calibration flag is auto-created when `max_score - min_score >= 2` for any com
 | to_department_id | UUID | FK → departments(id) ON DELETE CASCADE, NOT NULL | Target department |
 | name | VARCHAR(255) | NOT NULL | Path name |
 | description | TEXT | | Path description |
+| is_active | BOOLEAN | NOT NULL, DEFAULT true | Admin can disable specific paths |
 
 **`career_path_requirements`**
 
@@ -486,6 +520,45 @@ Stale assessments remain visible for historical reference but are visually disti
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Action timestamp |
 
 **Index:** `(entity_type, entity_id)`, `(user_id)`, `(created_at DESC)`
+
+#### 2.1.10 Notifications
+
+**`notifications`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| user_id | UUID | FK → users(id) ON DELETE CASCADE, NOT NULL | Recipient |
+| category | notification_category_enum | NOT NULL | Notification category |
+| title | VARCHAR(255) | NOT NULL | Notification title |
+| body | TEXT | NOT NULL | Notification body |
+| is_read | BOOLEAN | NOT NULL, DEFAULT false | Read status |
+| force_send | BOOLEAN | NOT NULL, DEFAULT false | True = ignores user toggle preferences (critical from Admin) |
+| telegram_sent | BOOLEAN | NOT NULL, DEFAULT false | Whether Telegram message was sent |
+| entity_type | VARCHAR(100) | | Related entity type (campaign, assessment, plan, etc.) |
+| entity_id | UUID | | Related entity ID |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Creation timestamp |
+
+**Enum `notification_category_enum`:** `assessment`, `idp`, `career`, `system`
+
+**Index:** `(user_id, is_read)`, `(created_at DESC)`
+
+#### 2.1.11 Calibration Adjustments
+
+**`calibration_adjustments`**
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK | Unique identifier |
+| calibration_flag_id | UUID | FK → calibration_flags(id) ON DELETE CASCADE, NOT NULL | Related flag |
+| adjusted_by | UUID | FK → users(id) ON DELETE SET NULL, NOT NULL | User who made adjustment |
+| action | calibration_action_enum | NOT NULL | Action taken |
+| original_score | NUMERIC(3,2) | | Score before adjustment |
+| adjusted_score | NUMERIC(3,2) | | Score after adjustment (if action = adjust) |
+| comment | TEXT | NOT NULL | Required justification |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT now() | Adjustment timestamp |
+
+**Enum `calibration_action_enum`:** `adjust_score`, `return_for_review`
 
 ### 2.2 ER Diagram
 
@@ -667,7 +740,7 @@ erDiagram
         NUMERIC self_score
         NUMERIC peer_avg
         NUMERIC tl_score
-        NUMERIC head_score
+        NUMERIC dept_head_score
         NUMERIC final_score
         TIMESTAMPTZ created_at
     }
@@ -675,7 +748,7 @@ erDiagram
     assessment_weights {
         UUID id PK
         UUID campaign_id FK
-        DECIMAL head_weight
+        DECIMAL dept_head_weight
         DECIMAL tl_weight
         DECIMAL self_weight
         DECIMAL peer_weight
@@ -795,9 +868,8 @@ Response `200`:
 ```json
 {
   "access_token": "eyJ...",
-  "refresh_token": "eyJ...",
   "token_type": "bearer",
-  "expires_in": 900,
+  "expires_in": 1800,
   "user": {
     "id": "uuid",
     "email": "user@example.com",
@@ -808,16 +880,13 @@ Response `200`:
 }
 ```
 
+> **Note:** `refresh_token` передаётся в httpOnly cookie (`Set-Cookie` header), НЕ в теле ответа. Cookie: `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api/auth/refresh`.
+
 **POST `/auth/refresh`**
 
-Request:
-```json
-{
-  "refresh_token": "eyJ..."
-}
-```
+Request: No body required. Refresh token is read from the httpOnly cookie automatically.
 
-Response `200`: Same as login response.
+Response `200`: Same as login response (new access_token + rotated refresh_token cookie).
 
 ### 3.2 Users — `/api/v1/users`
 
@@ -996,7 +1065,7 @@ Response `200`:
       "self_score": 3.0,
       "peer_avg": 2.5,
       "tl_score": 3.0,
-      "head_score": null,
+      "dept_head_score": null,
       "final_score": 2.8,
       "target_level": 4
     }
@@ -1266,7 +1335,7 @@ Client                              Server
 
 | Token | Lifetime | Storage (Client) | Contains |
 |-------|----------|-------------------|----------|
-| Access token | 15 minutes | Memory (variable) | user_id, email, role, exp, iat |
+| Access token | 30 minutes | Memory (variable) | user_id, email, role, exp, iat |
 | Refresh token | 7 days | httpOnly cookie or localStorage | user_id, token_id, exp, iat |
 
 - Refresh tokens are stored in Redis with a whitelist pattern. On refresh, the old token is invalidated and a new one is issued (rotation).
@@ -1285,43 +1354,52 @@ Client                              Server
 | Role | Scope | Description |
 |------|-------|-------------|
 | `admin` | Global | Full system access, user management, audit log |
-| `department_head` | Department | Manages department competencies, profiles, campaigns, views all department data |
+| `head` | Division | Sees all 5 departments, creates campaigns, runs calibration, manages competency catalog |
+| `department_head` | Department | Manages own department competencies, profiles, campaigns, participates in calibration |
 | `team_lead` | Team | Creates assessments for team members, views team analytics, manages IDPs |
+| `hr` | Division (read) | Views all personal data, exports reports, CSV import, cannot edit IDP |
 | `employee` | Self | Self-assessment, views own scores and plans |
 
 #### Permission Matrix
 
-| Resource | Action | admin | department_head | team_lead | employee |
-|----------|--------|-------|-----------------|-----------|----------|
-| Users | List all | Yes | Own department | Own team | No |
-| Users | Create | Yes | No | No | No |
-| Users | Update | Yes | No | No | Self only |
-| Users | Delete | Yes | No | No | No |
-| Departments | Create/Update/Delete | Yes | No | No | No |
-| Departments | View | Yes | Yes | Yes | Yes |
-| Teams | Create/Update | Yes | Own department | No | No |
-| Competencies | Create/Update/Delete | Yes | No | No | No |
-| Competencies | View | Yes | Yes | Yes | Yes |
-| Target Profiles | Create/Update/Delete | Yes | Own department | No | No |
-| Target Profiles | View | Yes | Yes | Yes | Yes |
-| Campaigns | Create | Yes | Own department | No | No |
-| Campaigns | Activate/Complete | Yes | Own department | No | No |
-| Campaigns | View | Yes | Yes | Yes | Own |
-| Assessments | Create | Yes | Own department | Own team | No |
-| Assessments | Submit | Yes | Assigned | Assigned | Assigned |
-| Assessments | View scores | Yes | Own department | Own team | Self only |
-| Analytics (Radar) | View | Yes | Own department | Own team | Self only |
-| Analytics (Heatmap) | View | Yes | Own department | No | No |
-| Development Plans | Create | Yes | Own department | Own team | No |
-| Development Plans | View | Yes | Own department | Own team | Self only |
-| Development Plans | Update goals | Yes | Creator | Creator | Own plan |
-| Career Paths | Create/Update/Delete | Yes | No | No | No |
-| Career Paths | View | Yes | Yes | Yes | Yes |
-| Career Path Gap | View | Yes | Own department | Own team | Self only |
-| Import | CSV | Yes | No | No | No |
-| Export | Reports | Yes | Own department | No | No |
-| Notifications | Send | Yes | No | No | No |
-| Audit Log | View | Yes | No | No | No |
+| Resource | Action | admin | head | department_head | team_lead | hr | employee |
+|----------|--------|-------|------|-----------------|-----------|-----|----------|
+| Users | List all | Yes | All depts | Own department | Own team | All depts | No |
+| Users | Create | Yes | No | No | No | No | No |
+| Users | Activate (confirm registration) | Yes | No | No | No | Yes | No |
+| Users | Update | Yes | No | No | No | No | Self only |
+| Users | Deactivate | Yes | No | No | No | No | No |
+| Departments | Create/Update/Delete | Yes | No | No | No | No | No |
+| Departments | View | Yes | Yes | Yes | Yes | Yes | Yes |
+| Teams | Create/Update | Yes | All depts | Own department | No | No | No |
+| Teams | Delete | Yes | All depts | Own dept (if empty) | No | No | No |
+| Competencies | Create/Update/Delete | Yes | Yes | Own department | No | No | No |
+| Competencies | View | Yes | Yes | Yes | Yes | Yes | Yes |
+| Target Profiles | Create/Update/Delete | Yes | Yes | Own department | No | No | No |
+| Target Profiles | View | Yes | Yes | Yes | Yes | Yes | Yes |
+| Campaigns | Create | Yes | Yes | Own department | No | No | No |
+| Campaigns | Activate/Complete | Yes | Yes | Own department | No | No | No |
+| Campaigns | View | Yes | Yes | Yes | Yes | Yes | Own |
+| Assessments | Create | Yes | No | Own department | Own team | No | No |
+| Assessments | Submit | Yes | No | Assigned | Assigned | No | Assigned |
+| Assessments | View scores | Yes | All depts (read-only) | Own department | Own team | All depts | Self (aggregate only) |
+| Calibration | Adjust scores | Yes | No | Own department | No | No | No |
+| Calibration | Return for review | Yes | No | Own department | No | No | No |
+| Analytics (Radar) | View | Yes | All depts | Own department | Own team | All depts | Self only |
+| Analytics (Heatmap) | View | Yes | All depts | Own department | No | All depts | No |
+| Development Plans | Create | Yes | All depts | Own department | Own team | No | Self |
+| Development Plans | View | Yes | All depts | Own department | Own team | All depts | Self only |
+| Development Plans | Approve/Reject | Yes | All depts | Own department | Own team | No | No |
+| Development Plans | Update goals | Yes | Creator | Creator | Creator | No | Own plan |
+| Career Paths | Create/Update/Delete | Yes | Yes | No | No | No | No |
+| Career Paths | View | Yes | Yes | Yes | Yes | Yes | Yes |
+| Career Path Gap | View | Yes | All depts | Own department | Own team | All depts | Self only |
+| Career Readiness | Approve visibility | Yes | Yes | Own department | Own team | No | No |
+| Import | CSV | Yes | No | No | No | Yes | No |
+| Export | Reports | Yes | All depts | Own department | No | All depts | No |
+| Notifications | Send system | Yes | No | No | No | No | No |
+| Audit Log | View | Yes | No | No | No | No | No |
+| Proposals | Review | Yes | Yes | Own department | Own team | No | No |
 
 ### 5.5 Backend Middleware
 
@@ -1377,6 +1455,18 @@ services:
     image: redis:7-alpine
     ports: ["6379:6379"]
 
+  celery-worker:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.celery_app worker --loglevel=info
+    depends_on: [db, redis]
+
+  celery-beat:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.celery_app beat --loglevel=info
+    depends_on: [db, redis]
+
   telegram-bot:
     build: ./backend
     env_file: .env
@@ -1423,7 +1513,7 @@ volumes:
 | `REDIS_URL` | Redis connection string | `redis://redis:6379/0` |
 | `JWT_SECRET_KEY` | Secret for JWT signing | (random 64-char string) |
 | `JWT_ALGORITHM` | JWT algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token TTL | `15` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token TTL | `30` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token TTL | `7` |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot API token | `123456:ABC-DEF...` |
 | `CORS_ORIGINS` | Allowed origins | `["https://matrix.example.com"]` |
@@ -1455,15 +1545,17 @@ Migration files are stored in `backend/alembic/versions/` and committed to versi
 
 ### 7.2 Authentication Security
 
+- **Password policy:** minimum 8 characters, at least 1 letter and 1 digit
 - Passwords hashed with bcrypt (12 rounds)
-- Short-lived access tokens (15 minutes)
+- Short-lived access tokens (30 minutes)
 - Refresh token rotation on each use
-- Refresh tokens stored in Redis whitelist (server-side invalidation)
-- Account lockout after 5 failed login attempts (15-minute cooldown)
+- Refresh tokens in httpOnly cookie (SameSite=Strict, Secure, Path=/api/auth/refresh)
+- **Token revocation:** on logout/password change, `jti` (JWT ID) is added to Redis SET `revoked_tokens` with TTL = remaining token lifetime. Middleware checks `jti` on every request
+- Account lockout after 5 failed login attempts (15-minute cooldown, tracked in Redis)
 
 ### 7.3 API Security
 
-- CORS restricted to known frontend origins
+- CORS origins: `http://localhost:3000` (dev), specific domain from env var `CORS_ORIGINS` (staging/prod). Credentials: true
 - Rate limiting: 100 requests/minute per IP for general endpoints, 10 requests/minute for auth endpoints
 - All input validated via Pydantic models before processing
 - SQL injection prevention through SQLAlchemy ORM (parameterized queries)
@@ -1481,8 +1573,8 @@ Migration files are stored in `backend/alembic/versions/` and committed to versi
 ### 7.5 Frontend Security
 
 - JWT access tokens stored in memory (not localStorage) to mitigate XSS
-- Refresh tokens in httpOnly cookies (preferred) or localStorage with short rotation
-- Content Security Policy (CSP) headers
+- Refresh tokens in httpOnly cookies (SameSite=Strict)
+- Content Security Policy (CSP): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'`
 - XSS prevention: React's built-in escaping + DOMPurify for any dynamic HTML
 - CSRF protection via SameSite cookies
 
@@ -1656,16 +1748,26 @@ Prepared for Prometheus integration:
 Final score is computed as a weighted average of assessment types:
 
 ```
-final_score = (w_self * self_score + w_peer * peer_avg + w_tl * tl_score + w_head * head_score) / (w_self + w_peer + w_tl + w_head)
+final_score = w_dept_head * dept_head_score + w_tl * tl_score + w_self * self_score + w_peer * peer_avg
 ```
 
 Default weights:
 
-| Assessor Type | Weight |
-|---------------|--------|
-| Self | 0.1 |
-| Peer (average) | 0.3 |
-| Team Lead | 0.4 |
-| Department Head | 0.2 |
+| Assessor Type | Weight | Who |
+|---------------|--------|-----|
+| Department Head | 0.35 | Руководитель отдела (Head does NOT assess) |
+| Team Lead | 0.30 | Тимлид |
+| Self | 0.20 | Самооценка |
+| Peer (average) | 0.15 | Среднее по peer-рецензентам |
 
-If a score type is missing (e.g., no department head assessment), its weight is redistributed proportionally among the remaining types.
+**Weight redistribution:** If a source is missing, its weight is redistributed proportionally:
+
+```
+remaining_total = sum(weights of present sources)
+adjusted_weight[i] = original_weight[i] / remaining_total
+```
+
+Example: Department Head did not assess (w=0.35). Remaining: TL 0.30, Self 0.20, Peers 0.15 (sum=0.65).
+- TL: 0.30/0.65 ≈ 0.4615
+- Self: 0.20/0.65 ≈ 0.3077
+- Peers: 0.15/0.65 ≈ 0.2308

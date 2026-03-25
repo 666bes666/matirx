@@ -1,7 +1,8 @@
 # Release Policy and Pipeline
 
 **Project:** Matrix -- Competency Matrix Web Application
-**Division:** Dynamic Infrastructure Portal Support, Sber
+**Developer:** Solo developer with AI assistance
+**Hosting:** Yandex Cloud
 **Last updated:** 2026-03-24
 
 ---
@@ -23,55 +24,48 @@
 
 ## 1. Branching Strategy
 
-The project follows a **Git Flow** branching model.
+The project follows **GitHub Flow** -- a simplified branching model with a single long-lived branch and short-lived feature branches.
 
 ### Branch Types
 
 | Branch | Purpose | Branches from | Merges into | Deploys to |
 |---|---|---|---|---|
-| `main` | Production-ready code | -- | -- | Production |
-| `develop` | Integration branch | `main` (initial) | -- | Staging |
-| `feature/*` | New features | `develop` | `develop` | -- |
-| `bugfix/*` | Bug fixes | `develop` | `develop` | -- |
-| `hotfix/*` | Critical production fixes | `main` | `main` + `develop` | Production |
-| `release/*` | Release preparation | `develop` | `main` + `develop` | Staging |
-| `docs/*` | Documentation-only changes | `develop` | `develop` | -- |
+| `main` | Production-ready code | -- | -- | Staging (on merge), Production (on tag) |
+| `feature/*` | New features | `main` | `main` | -- |
+| `fix/*` | Bug fixes | `main` | `main` | -- |
+| `docs/*` | Documentation-only changes | `main` | `main` | -- |
+
+### Branch Naming Convention
+
+- `feature/US-XXX-short-desc` -- new feature tied to a user story
+- `fix/US-XXX-short-desc` -- bug fix tied to an issue
+- `docs/topic` -- documentation changes
 
 ### Branch Protection Rules
 
-- **`main`** -- protected. Direct pushes are forbidden. Changes only via approved PRs. Requires passing CI checks.
-- **`develop`** -- protected. Direct pushes are forbidden. Changes only via PRs. Requires passing CI checks.
+- **`main`** -- protected. Direct pushes are forbidden. Changes only via PRs. Requires passing CI checks.
 
 ### Branching Flow Diagram
 
 ```
-main        ──●────────────────────●──────────────●──────────────●──→
-              │                    ↑              ↑              ↑
-              │              merge + tag    merge + tag    hotfix merge
-              │                    │              │              │
-release/*     │              ●──●──┘              │              │
-              │              ↑                    │              │
-              │              │                    │              │
-develop     ──●──●──●──●──●──●──●──●──●──●──●──●──●──●──●──●──●──→
-              │  ↑  │  ↑     ↑        │  ↑                 ↑
-              │  │  │  │     │        │  │                 │
-feature/*     ●──┘  │  │     │        ●──┘                 │
-                    │  │     │                             │
-bugfix/*            ●──┘     │                             │
-                             │                             │
-hotfix/*                     │                       main──●──→main
-                             │                             │
-docs/*                       ●─────────────────────────────┘
+main        ──●──────●──────●──────●──────●──tag v1.0──●──────●──tag v1.1──→
+              │      ↑      │      ↑      ↑                   ↑
+              │      │      │      │      │                   │
+feature/*     ●──●───┘      │      │      │                   │
+                            │      │      │                   │
+fix/*                       ●──●───┘      │                   │
+                                          │                   │
+docs/*                                    ●───────────────────┘
 ```
 
 **Reading the diagram:**
 
 - Arrows (`→`) indicate the direction of time.
 - `●` marks a commit or branch point.
-- `↑` indicates a merge back into the parent branch.
-- `feature/*` and `bugfix/*` branches are short-lived and merge back into `develop`.
-- `release/*` branches are created from `develop`, finalized, then merged into both `main` and `develop`.
-- `hotfix/*` branches are created from `main`, and after the fix is merged into both `main` and `develop`.
+- `↑` indicates a squash merge back into `main` via PR.
+- All branches are short-lived and branch from `main`, merge back into `main`.
+- Production deploys happen only when a version tag (`v*`) is pushed on `main`.
+- Staging deploys happen automatically on every merge to `main`.
 
 ---
 
@@ -163,8 +157,8 @@ The `score` field is now nested under `result.score`.
 
 ### General Rules
 
-- **All changes** reach `develop` and `main` exclusively through pull requests.
-- No direct pushes to protected branches.
+- **All changes** reach `main` exclusively through pull requests.
+- No direct pushes to `main`.
 - Every PR must pass all CI checks before merging.
 
 ### PR Template
@@ -198,21 +192,15 @@ Brief description of what this PR does and why.
 
 ### Review Requirements
 
-| Scenario | Requirement |
-|---|---|
-| Team of 2+ developers | At least 1 reviewer approval required |
-| Solo developer | Self-review with the full checklist completed |
+Solo developer project: **self-review with the full checklist completed** is sufficient. No mandatory reviewer count.
 
 ### Merge Strategy
 
 | Branch type | Merge method | Rationale |
 |---|---|---|
-| `feature/*` → `develop` | **Squash merge** | Clean, single-commit history on develop |
-| `bugfix/*` → `develop` | **Squash merge** | Clean, single-commit history on develop |
-| `docs/*` → `develop` | **Squash merge** | Clean, single-commit history on develop |
-| `release/*` → `main` | **Merge commit** | Preserve release context |
-| `hotfix/*` → `main` | **Merge commit** | Preserve hotfix context |
-| `main` → `develop` (back-merge) | **Merge commit** | Sync production state |
+| `feature/*` → `main` | **Squash merge** | Clean, single-commit history on main |
+| `fix/*` → `main` | **Squash merge** | Clean, single-commit history on main |
+| `docs/*` → `main` | **Squash merge** | Clean, single-commit history on main |
 
 ---
 
@@ -223,9 +211,9 @@ The CI/CD pipeline is implemented with **GitHub Actions**.
 ### Pipeline Stages
 
 ```
-┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
-│   Lint   │───→│   Test   │───→│  Build   │───→│  Deploy  │
-└──────────┘    └──────────┘    └──────────┘    └──────────┘
+┌──────────┐    ┌────────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│   Lint   │───→│ Type Check │───→│   Test   │───→│  Build   │───→│  Deploy  │
+└──────────┘    └────────────┘    └──────────┘    └──────────┘    └──────────┘
 ```
 
 ### Trigger Matrix
@@ -233,44 +221,54 @@ The CI/CD pipeline is implemented with **GitHub Actions**.
 | Event | Lint | Type Check | Unit Tests | Build | Deploy |
 |---|---|---|---|---|---|
 | PR opened/updated | Yes | Yes | Yes | Yes | -- |
-| Merge to `develop` | Yes | Yes | Yes | Yes | Staging |
-| Merge to `main` | Yes | Yes | Yes | Yes | Production |
+| Merge to `main` | Yes | Yes | Yes | Yes | Staging |
+| Git tag `v*` | -- | -- | -- | -- | Production |
 
 ### Stage Details
 
 #### Lint
-- **Tool:** Ruff
-- **Checks:** Code style, import ordering, unused imports, common errors
+- **Backend:** Ruff -- code style, import ordering, unused imports, common errors
+- **Frontend:** ESLint + Prettier -- code style, formatting
 - **Fails fast:** Yes -- subsequent stages are skipped on failure
 
 #### Type Check
-- **Tool:** mypy
-- **Config:** Strict mode enabled
+- **Backend:** mypy -- strict mode enabled
+- **Frontend:** tsc --noEmit -- TypeScript type checking without emitting output
 - **Fails fast:** Yes
 
 #### Unit Tests
-- **Tool:** pytest
-- **Coverage:** Minimum threshold enforced (configurable, recommended 80%)
-- **Reports:** Coverage report uploaded as artifact
+- **Backend:** pytest -- minimum 80% coverage threshold enforced, coverage report uploaded as artifact
+- **Frontend:** vitest -- unit tests for calculations and logic
+- **Reports:** Coverage reports uploaded as artifacts
 
 #### Build
-- **Action:** Build Docker image
-- **Tags:** `sha-{commit}`, `latest` (for develop), `v{version}` (for main)
-- **Registry:** Container registry (GitHub Container Registry or internal)
+- **Action:** Build Docker images for backend and frontend
+- **Tags:** `sha-{commit}`, `latest` (for main), `v{version}` (for tags)
+- **Registry:** Yandex Container Registry
 
-#### Deploy
-- **Staging:** Triggered automatically on merge to `develop`
-- **Production:** Triggered automatically on merge to `main`, also creates a GitHub Release
+#### Deploy Staging
+- **Trigger:** Automatically on merge to `main`
+- **Target:** Yandex Cloud VM via docker-compose
+- **Method:** Pull latest images, restart services
+
+#### Deploy Production
+- **Trigger:** On git tag `v*`
+- **Target:** Yandex Cloud VM via docker-compose
+- **Method:** Pull tagged images, restart services
+- **Post-deploy:** Create a GitHub Release from the tag
+
+### Service Containers in CI
+
+- `postgres:16` -- for migration and integration tests
+- `redis:7` -- for cache and task queue tests
 
 ### Workflow Files
 
 ```
 .github/
   workflows/
-    ci.yml          # Lint + type check + tests (on all PRs)
-    build.yml       # Docker image build
-    deploy-staging.yml    # Deploy to staging
-    deploy-production.yml # Deploy to production + GitHub Release
+    ci.yml          # Lint + type check + tests + build (on PRs and merge to main)
+    deploy.yml      # Deploy to staging (on merge to main) and production (on tag v*)
 ```
 
 ---
@@ -280,8 +278,8 @@ The CI/CD pipeline is implemented with **GitHub Actions**.
 | Environment | Source | Trigger | URL | Purpose |
 |---|---|---|---|---|
 | **Development** | Local machine | Manual | `localhost` | Developer workstation |
-| **Staging** | `develop` branch | Auto on merge | Cloud URL (staging) | Integration testing, QA |
-| **Production** | `main` branch | Auto on merge | Cloud URL (prod) | Live application |
+| **Staging** | `main` branch | Auto on merge to `main` | Yandex Cloud VM (staging) | Integration testing, QA |
+| **Production** | `main` branch (tagged) | On git tag `v*` | Yandex Cloud VM (prod) | Live application |
 
 ### Development (Local)
 
@@ -292,52 +290,33 @@ The CI/CD pipeline is implemented with **GitHub Actions**.
 
 ### Staging
 
-- Deployed to cloud infrastructure from the `develop` branch
+- Deployed to Yandex Cloud VM from the `main` branch on every merge
 - Uses a staging database (separate from production)
 - Mirrors production configuration as closely as possible
-- Used for final QA before releases
+- Used for final QA before tagging a release
 
 ### Production
 
-- Deployed to cloud infrastructure from the `main` branch
+- Deployed to Yandex Cloud VM on git tag `v*`
 - Production database with real data
 - Monitoring and alerting enabled
 - Access restricted and audited
+
+### Infrastructure Note
+
+Initially, staging and production can share a single Yandex Cloud VM with separate docker-compose projects and isolated databases. As the project grows, they can be split to separate VMs.
 
 ---
 
 ## 7. Release Process
 
+Simplified for a solo developer project.
+
 ### Step-by-step
 
-1. **Create a release branch** from `develop`:
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout -b release/1.2.0
-   ```
+1. **Ensure `main` is stable** -- CI is green, staging has been tested.
 
-2. **Bump the version** in the project configuration files.
-
-3. **Update the changelog** (`CHANGELOG.md`) with all changes since the last release.
-
-4. **Push the release branch** and deploy to staging for final QA:
-   ```bash
-   git push origin release/1.2.0
-   ```
-
-5. **Perform final QA** on the staging environment.
-   - Run the full regression test suite.
-   - Verify all acceptance criteria for the release.
-   - Fix any issues directly on the release branch.
-
-6. **Create a PR** from `release/1.2.0` to `main`.
-   - Ensure all CI checks pass.
-   - Get approval (or perform self-review).
-
-7. **Merge to main** using a merge commit.
-
-8. **Tag the release** on `main`:
+2. **Create and push a version tag**:
    ```bash
    git checkout main
    git pull origin main
@@ -345,38 +324,26 @@ The CI/CD pipeline is implemented with **GitHub Actions**.
    git push origin v1.2.0
    ```
 
-9. **Create a GitHub Release** from the tag, including:
+3. **CI deploys to production** automatically on the `v*` tag.
+
+4. **Create a GitHub Release** from the tag, including:
    - Release title: `v1.2.0`
    - Release notes / changelog excerpt
    - Any relevant migration instructions
-
-10. **Merge `main` back into `develop`** to sync any release-branch fixes:
-    ```bash
-    git checkout develop
-    git pull origin develop
-    git merge main
-    git push origin develop
-    ```
-
-11. **Delete the release branch**:
-    ```bash
-    git branch -d release/1.2.0
-    git push origin --delete release/1.2.0
-    ```
 
 ---
 
 ## 8. Hotfix Process
 
-Hotfixes are for critical production issues that cannot wait for the next scheduled release.
+Hotfixes follow the same flow as regular fixes. There is no separate hotfix branch type.
 
 ### Step-by-step
 
-1. **Create a hotfix branch** from `main`:
+1. **Create a fix branch** from `main`:
    ```bash
    git checkout main
    git pull origin main
-   git checkout -b hotfix/1.2.1
+   git checkout -b fix/US-XXX-short-desc
    ```
 
 2. **Apply the fix** and commit using conventional commits:
@@ -384,14 +351,14 @@ Hotfixes are for critical production issues that cannot wait for the next schedu
    git commit -m "fix(api): correct null pointer in evaluation endpoint"
    ```
 
-3. **Push the hotfix branch** and open a PR to `main`:
+3. **Push the branch** and open a PR to `main`:
    ```bash
-   git push origin hotfix/1.2.1
+   git push origin fix/US-XXX-short-desc
    ```
 
-4. **Ensure CI passes**, review the PR, and merge to `main` using a merge commit.
+4. **Ensure CI passes**, complete the self-review checklist, and squash merge to `main`.
 
-5. **Tag with a patch version** on `main`:
+5. **Tag a new patch version** on `main`:
    ```bash
    git checkout main
    git pull origin main
@@ -399,20 +366,12 @@ Hotfixes are for critical production issues that cannot wait for the next schedu
    git push origin v1.2.1
    ```
 
-6. **Create a GitHub Release** from the hotfix tag.
+6. **CI deploys to production** automatically. Create a GitHub Release from the tag.
 
-7. **Merge `main` back into `develop`**:
+7. **Delete the fix branch**:
    ```bash
-   git checkout develop
-   git pull origin develop
-   git merge main
-   git push origin develop
-   ```
-
-8. **Delete the hotfix branch**:
-   ```bash
-   git branch -d hotfix/1.2.1
-   git push origin --delete hotfix/1.2.1
+   git branch -d fix/US-XXX-short-desc
+   git push origin --delete fix/US-XXX-short-desc
    ```
 
 ---
@@ -441,12 +400,10 @@ Hotfixes are for critical production issues that cannot wait for the next schedu
 
 ### Migration Deployment Order
 
+For an MVP with 10-50 users, brief downtime during deployments is acceptable. The general approach:
+
 1. **Run migrations before deploying new application code** if the new code depends on schema changes.
-2. **Deploy new application code before running migrations** if the migration removes columns or tables that old code depends on (blue-green compatible approach).
-3. For complex changes, use a **multi-phase migration** strategy:
-   - Phase 1: Add new columns/tables (backwards compatible)
-   - Phase 2: Deploy new code that uses the new schema
-   - Phase 3: Remove old columns/tables (cleanup migration)
+2. **Deploy new application code before running migrations** if the migration removes columns or tables that old code depends on.
 
 ---
 
@@ -459,12 +416,13 @@ If a production deployment introduces a critical issue:
 1. **Identify the previous stable image tag** (e.g., `v1.1.0` or a specific commit SHA).
 2. **Redeploy the previous container image**:
    ```bash
-   # Example: revert to previous version
-   docker pull registry/matrix-app:v1.1.0
-   # Redeploy using orchestration tool
+   # Example: revert to previous version on Yandex Cloud VM
+   docker pull cr.yandex/<registry-id>/matrix-app:v1.1.0
+   # Update docker-compose to use the previous tag and restart
+   docker compose up -d
    ```
 3. **Verify** the application is functioning correctly on the rolled-back version.
-4. **Investigate** the root cause and create a `hotfix/*` or `bugfix/*` branch.
+4. **Investigate** the root cause and create a `fix/*` branch.
 
 ### Database Rollback
 
@@ -485,9 +443,8 @@ If the issue is caused by a database migration:
 |---|---|
 | Application bug, no migration involved | Redeploy previous container image |
 | Application bug + reversible migration | Alembic downgrade + redeploy previous image |
-| Application bug + irreversible migration | Assess data impact, consider forward-fix via hotfix |
+| Application bug + irreversible migration | Assess data impact, consider forward-fix via `fix/*` branch |
 | Performance degradation | Redeploy previous image, investigate |
-| Infrastructure issue | Escalate to infrastructure team |
 
 ### Rollback SLA
 
@@ -501,12 +458,16 @@ If the issue is caused by a database migration:
 
 | Policy | Value |
 |---|---|
-| Branching model | Git Flow |
+| Branching model | GitHub Flow |
+| Production branch | `main` |
+| Feature branches | `feature/*`, `fix/*`, `docs/*` → PR to `main` |
 | Versioning | Semantic Versioning (MAJOR.MINOR.PATCH) |
 | Commit format | Conventional Commits |
-| Merge strategy (features) | Squash merge |
-| Merge strategy (releases/hotfixes) | Merge commit |
-| Minimum reviewers | 1 (self-review with checklist for solo dev) |
+| Merge strategy | Squash merge (all branch types) |
+| Review process | Self-review with full checklist (solo developer) |
 | CI stages | Lint, Type Check, Test, Build, Deploy |
+| Staging deploy | Auto on merge to `main` |
+| Production deploy | On git tag `v*` |
+| Hosting | Yandex Cloud |
 | Migration tool | Alembic |
 | Rollback method | Previous container image + Alembic downgrade |
