@@ -73,3 +73,32 @@ class CampaignRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class CampaignWeightsUpdate(BaseModel):
+    department_head_weight: float
+    team_lead_weight: float
+    self_weight: float
+    peer_weight: float
+
+
+class CampaignProgressRead(BaseModel):
+    campaign_id: uuid.UUID
+    total_assessments: int
+    completed_assessments: int
+    pending_assessments: int
+    completion_pct: float
+
+
+class AggregatedScoreRead(BaseModel):
+    user_id: uuid.UUID
+    competency_id: uuid.UUID
+    final_score: float
+    self_score: float | None
+    peer_score: float | None
+    tl_score: float | None
+    dh_score: float | None
+    model_config = {"from_attributes": True}
+
+class PeerSetRequest(BaseModel):
+    peer_ids: list[uuid.UUID]

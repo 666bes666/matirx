@@ -10,7 +10,11 @@ import { UserProfilePage } from './pages/UserProfilePage';
 import { CompetenciesPage } from './pages/CompetenciesPage';
 import { TargetProfilesPage } from './pages/TargetProfilesPage';
 import { AssessmentFormPage } from './pages/AssessmentFormPage';
-import { MatrixPage } from './pages/MatrixPage';
+import { MatrixPage } from './pages/MatrixPage'
+import { CampaignsPage } from './pages/CampaignsPage'
+import { CampaignDetailPage } from './pages/CampaignDetailPage'
+import { MyTasksPage } from './pages/MyTasksPage';
+import { GapAnalysisPage } from './pages/GapAnalysisPage';
 
 export function App() {
   return (
@@ -26,6 +30,10 @@ export function App() {
           <Route path="/target-profiles" element={<TargetProfilesPage />} />
           <Route path="/assessments/:id" element={<AssessmentFormPage />} />
           <Route path="/matrix" element={<MatrixPage />} />
+          <Route path="/campaigns" element={<CampaignsPage />} />
+          <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
+          <Route path="/my-tasks" element={<MyTasksPage />} />
+          <Route path="/users/:userId/gap" element={<GapAnalysisPage />} />
         </Route>
       </Route>
     </Routes>

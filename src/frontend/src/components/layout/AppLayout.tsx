@@ -81,6 +81,20 @@ export function AppLayout() {
             </Text>
           )}
         </NavLink>
+        <NavLink to="/campaigns" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Кампании оценки
+            </Text>
+          )}
+        </NavLink>
+        <NavLink to="/my-tasks" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Мои задачи
+            </Text>
+          )}
+        </NavLink>
       </AppShell.Navbar>
 
       <AppShell.Main>

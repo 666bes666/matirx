@@ -64,3 +64,15 @@ export interface UserUpdate {
   hire_date?: string;
   is_active?: boolean;
 }
+
+export interface AssessmentHistoryEntry {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_end_date: string;
+  competency_id: string;
+  final_score: number;
+  self_score: number | null;
+  tl_score: number | null;
+  dh_score: number | null;
+  peer_score: number | null;
+}

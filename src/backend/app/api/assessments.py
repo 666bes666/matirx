@@ -8,11 +8,15 @@ from app.core.dependencies import get_current_user, require_roles
 from app.models.enums import CampaignStatus
 from app.models.user import User
 from app.schemas.assessment import (
+    AggregatedScoreRead,
     AssessmentCreate,
     AssessmentRead,
     AssessmentScoreSubmit,
     CampaignCreate,
+    CampaignProgressRead,
     CampaignRead,
+    CampaignWeightsUpdate,
+    PeerSetRequest,
 )
 from app.services.assessment import AssessmentService
 
@@ -22,6 +26,7 @@ ERROR_MAP = {
     "not_found": (status.HTTP_404_NOT_FOUND, "Не найдено"),
     "duplicate": (status.HTTP_409_CONFLICT, "Оценка уже существует"),
     "invalid_dates": (status.HTTP_400_BAD_REQUEST, "Дата окончания должна быть позже даты начала"),
+    "invalid_transition": (status.HTTP_409_CONFLICT, "Недопустимый переход статуса"),
 }
 
 
@@ -124,3 +129,134 @@ async def submit_scores(
     except ValueError as e:
         _raise(str(e))
     return assessment
+
+
+@router.post("/campaigns/{campaign_id}/activate", response_model=CampaignRead)
+async def activate_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head", "department_head")),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.activate_campaign(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.post("/campaigns/{campaign_id}/close", response_model=CampaignRead)
+async def close_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head", "department_head")),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.close_campaign(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.post("/campaigns/{campaign_id}/finalize", response_model=CampaignRead)
+async def finalize_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head", "department_head")),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.finalize_campaign(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.post("/campaigns/{campaign_id}/archive", response_model=CampaignRead)
+async def archive_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head", "department_head")),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.archive_campaign(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.get("/campaigns/{campaign_id}/progress", response_model=CampaignProgressRead)
+async def get_campaign_progress(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.get_campaign_progress(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.get("/campaigns/{campaign_id}/scores", response_model=list[AggregatedScoreRead])
+async def get_aggregated_scores(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head", "department_head", "team_lead", "hr")),
+):
+    service = AssessmentService(db)
+    try:
+        return await service.get_aggregated_scores(campaign_id)
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.put("/campaigns/{campaign_id}/weights")
+async def set_campaign_weights(
+    campaign_id: uuid.UUID,
+    data: CampaignWeightsUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles("admin", "head")),
+):
+    service = AssessmentService(db)
+    try:
+        await service.set_campaign_weights(campaign_id, data)
+        return {"ok": True}
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.post("/campaigns/{campaign_id}/peers")
+async def set_peers(
+    campaign_id: uuid.UUID,
+    data: PeerSetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = AssessmentService(db)
+    try:
+        await service.set_peers(campaign_id, current_user.id, data.peer_ids)
+        return {"ok": True}
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.get("/campaigns/{campaign_id}/peers")
+async def get_peers(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = AssessmentService(db)
+    try:
+        peer_ids = await service.get_peers(campaign_id, current_user.id)
+        return [str(p) for p in peer_ids]
+    except ValueError as e:
+        _raise(str(e))
+
+
+@router.get("/my-tasks", response_model=list[AssessmentRead])
+async def list_my_tasks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = AssessmentService(db)
+    return await service.list_my_tasks(current_user)

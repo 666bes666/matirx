@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { UserRead, UserCreate, UserUpdate } from '../types/models'
+import type { UserRead, UserCreate, UserUpdate, AssessmentHistoryEntry } from '../types/models'
 
 export interface UserFilters {
   search?: string
@@ -27,4 +27,7 @@ export const usersApi = {
 
   deactivate: (id: string) =>
     apiClient.post<UserRead>(`/users/${id}/deactivate`).then((r) => r.data),
+
+  getAssessmentHistory: (userId: string) =>
+    apiClient.get<AssessmentHistoryEntry[]>(`/users/${userId}/assessment-history`).then((r) => r.data),
 }

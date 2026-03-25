@@ -1,10 +1,12 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
+from app.models.assessment import AggregatedScore, AssessmentCampaign
 from app.models.enums import UserRole
 from app.models.user import User
 from app.schemas.user import UserCreate, UserRead, UserUpdate
@@ -130,3 +132,36 @@ async def deactivate_user(
     except ValueError as e:
         _raise(str(e))
     return user
+
+
+@router.get("/{user_id}/assessment-history")
+async def get_assessment_history(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    elevated = ("admin", "head", "department_head", "team_lead", "hr")
+    if current_user.role.value not in elevated and current_user.id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
+
+    result = await db.execute(
+        select(AggregatedScore, AssessmentCampaign)
+        .join(AssessmentCampaign, AggregatedScore.campaign_id == AssessmentCampaign.id)
+        .where(AggregatedScore.user_id == user_id)
+        .order_by(AssessmentCampaign.end_date.desc())
+    )
+    rows = result.all()
+    return [
+        {
+            "campaign_id": str(agg.campaign_id),
+            "campaign_name": campaign.name,
+            "campaign_end_date": str(campaign.end_date),
+            "competency_id": str(agg.competency_id),
+            "final_score": float(agg.final_score),
+            "self_score": float(agg.self_score) if agg.self_score is not None else None,
+            "tl_score": float(agg.tl_score) if agg.tl_score is not None else None,
+            "dh_score": float(agg.dh_score) if agg.dh_score is not None else None,
+            "peer_score": float(agg.peer_score) if agg.peer_score is not None else None,
+        }
+        for agg, campaign in rows
+    ]

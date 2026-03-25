@@ -62,3 +62,25 @@ export interface AssessmentRead {
   scores: AssessmentScoreRead[]
   created_at: string
 }
+
+export interface CampaignProgressRead {
+  campaign_id: string
+  total_assessments: number
+  completed_assessments: number
+  pending_assessments: number
+  completion_pct: number
+}
+
+export interface AggregatedScoreRead {
+  user_id: string
+  competency_id: string
+  final_score: number
+  self_score: number | null
+  peer_score: number | null
+  tl_score: number | null
+  dh_score: number | null
+}
+
+export interface PeerSelectionSet {
+  peer_ids: string[]
+}

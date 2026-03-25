@@ -10,8 +10,10 @@ import {
   Title,
 } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { analyticsApi } from '../api/analytics'
 import { usersApi } from '../api/users'
+import { RadarChart } from '../components/assessment/RadarChart'
 import { RoleBadge } from '../components/ui/RoleBadge'
 import { useAuthStore } from '../stores/authStore'
 import { UserRole } from '../types/enums'
@@ -19,11 +21,18 @@ import { UserRole } from '../types/enums'
 export function UserProfilePage() {
   const { id } = useParams<{ id: string }>()
   const { user: currentUser } = useAuthStore()
+  const navigate = useNavigate()
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['user', id],
     queryFn: () => usersApi.get(id!),
     enabled: !!id,
+  })
+
+  const { data: matrix } = useQuery({
+    queryKey: ['matrix-user', user?.id],
+    queryFn: () => analyticsApi.getMatrix(),
+    enabled: !!user,
   })
 
   const canEdit =
@@ -38,11 +47,23 @@ export function UserProfilePage() {
     ? [user.last_name, user.first_name, user.patronymic].filter(Boolean).join(' ')
     : ''
 
+  const radarData = matrix
+    ? matrix.competencies.map((comp) => ({
+        subject: comp.name.length > 20 ? comp.name.slice(0, 20) + '…' : comp.name,
+        score: matrix.scores[user!.id]?.[comp.id] ?? 0,
+      }))
+    : []
+
   return (
     <Stack>
       <Group justify="space-between">
         <Title order={2}>Профиль сотрудника</Title>
         <Group>
+          {user && (
+            <Button variant="light" size="sm" onClick={() => navigate(`/users/${user.id}/gap`)}>
+              Gap-анализ
+            </Button>
+          )}
           {canEdit && (
             <Button variant="outline" size="sm">
               Редактировать
@@ -122,6 +143,13 @@ export function UserProfilePage() {
           </Stack>
         )}
       </Paper>
+
+      {radarData.length > 0 && (
+        <Paper p="lg" withBorder>
+          <Text fw={600} mb="md">Профиль компетенций</Text>
+          <RadarChart data={radarData} />
+        </Paper>
+      )}
     </Stack>
   )
 }
