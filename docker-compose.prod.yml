@@ -1,0 +1,36 @@
+services:
+  db:
+    restart: always
+    ports: []
+
+  redis:
+    restart: always
+    ports: []
+
+  backend:
+    image: ${REGISTRY}/matrix-backend:${TAG:-latest}
+    restart: always
+    volumes: []
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+  frontend:
+    image: ${REGISTRY}/matrix-frontend:${TAG:-latest}
+    restart: always
+    volumes: []
+    command: []
+    ports:
+      - "80:80"
+
+  celery-worker:
+    image: ${REGISTRY}/matrix-backend:${TAG:-latest}
+    restart: always
+    volumes: []
+
+  celery-beat:
+    image: ${REGISTRY}/matrix-backend:${TAG:-latest}
+    restart: always
+    volumes: []
+
+  telegram-bot:
+    profiles:
+      - disabled
