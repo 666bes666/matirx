@@ -64,6 +64,11 @@ export function UserProfilePage() {
               Gap-анализ
             </Button>
           )}
+          {user && (
+            <Button variant="light" size="sm" onClick={() => navigate(`/users/${user.id}/career`)}>
+              Карьерные треки
+            </Button>
+          )}
           {canEdit && (
             <Button variant="outline" size="sm">
               Редактировать

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.analytics import router as analytics_router
 from app.api.assessments import router as assessments_router
 from app.api.auth import router as auth_router
+from app.api.career_paths import router as career_paths_router
 from app.api.competencies import router as competencies_router
 from app.api.departments import router as departments_router
 from app.api.development_plans import router as development_plans_router
@@ -24,3 +25,4 @@ api_router.include_router(analytics_router)
 api_router.include_router(development_plans_router)
 api_router.include_router(export_router)
 api_router.include_router(imports_router)
+api_router.include_router(career_paths_router)

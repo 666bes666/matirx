@@ -116,6 +116,13 @@ export function AppLayout() {
             </Text>
           )}
         </NavLink>
+        <NavLink to="/career-paths" style={{ textDecoration: 'none' }}>
+          {({ isActive }) => (
+            <Text size="sm" c={isActive ? undefined : 'dimmed'} fw={isActive ? 600 : undefined} py="xs">
+              Карьерные треки
+            </Text>
+          )}
+        </NavLink>
       </AppShell.Navbar>
 
       <AppShell.Main>

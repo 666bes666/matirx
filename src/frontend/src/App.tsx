@@ -19,6 +19,9 @@ import { HeatmapPage } from './pages/HeatmapPage'
 import { IDPPage } from './pages/IDPPage'
 import { IDPDetailPage } from './pages/IDPDetailPage'
 import { ImportPage } from './pages/ImportPage'
+import { CareerPathsPage } from './pages/CareerPathsPage'
+import { CareerPathDetailPage } from './pages/CareerPathDetailPage'
+import { CareerReadinessPage } from './pages/CareerReadinessPage'
 
 export function App() {
   return (
@@ -42,6 +45,9 @@ export function App() {
           <Route path="/idp" element={<IDPPage />} />
           <Route path="/idp/:id" element={<IDPDetailPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/career-paths" element={<CareerPathsPage />} />
+          <Route path="/career-paths/:id" element={<CareerPathDetailPage />} />
+          <Route path="/users/:userId/career" element={<CareerReadinessPage />} />
         </Route>
       </Route>
     </Routes>
