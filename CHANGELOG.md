@@ -10,6 +10,36 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.6.0] — 2026-03-28 — Phase 4 Complete: Career Tracks
+
+### Added
+
+**Career path CRUD**
+- `GET/POST /api/v1/career-paths` — list active paths, create (admin/head)
+- `GET/DELETE /api/v1/career-paths/{id}` — read/delete
+- `PUT /api/v1/career-paths/{id}/requirements` — replace-all competency requirements with mandatory/desirable flags
+- `GET /api/v1/career-paths/by-department/{dept_id}` — paths originating from a department
+
+**Readiness scoring**
+- `GET /api/v1/career-paths/{id}/readiness/{user_id}` — computes readiness from latest AggregatedScores against path requirements
+- Rule: mandatory 100% + desirable ≥ 90% → `is_ready = true`
+- Returns `readiness_pct`, `mandatory_met`, per-item current/required/gap breakdown
+
+**Frontend**
+- `CareerPathsPage` — card list with dept→dept arrows, inline create modal
+- `CareerPathDetailPage` — requirements table with add/remove
+- `CareerReadinessPage` — path selector, readiness progress bar, per-competency status table
+- `UserProfilePage` — "Карьерные треки" button
+
+### Tests
+- 12 new tests: `test_career_paths.py`
+- **Total: 183 tests, coverage 89%**
+
+### PRs
+- [#16](https://github.com/666bes666/matrix/pull/16) — Phase 4 complete
+
+---
+
 ## [0.5.0] — 2026-03-25 — Phase 3 Complete: Analytics MVP
 
 ### Added
@@ -249,7 +279,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-[Unreleased]: https://github.com/666bes666/matrix/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/666bes666/matrix/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/666bes666/matrix/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/666bes666/matrix/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/666bes666/matrix/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/666bes666/matrix/compare/v0.2.0...v0.3.0
